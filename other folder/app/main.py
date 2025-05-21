@@ -8,6 +8,7 @@ from . import models, database
 #create database table automatically 
 models.Base.metadata.create_all(bind=database.engine)
 
+#fast api application for api control
 app = FastAPI()
 
 @app.get("/")
