@@ -1120,7 +1120,75 @@ Finally,
 * This setup enables event-driven architecture for decoupled microservices communication.
 
 
+Since you’ve requested that the documentation remain the same but with an updated message format for the `product-topic` consumed by the inventory service’s Kafka consumer, I’ll revise the relevant sections of the previous response to reflect the specified product service message format for the `product-topic`. The new message format is:
+
+```json
+{
+  "name": "Premium Smartphone",
+  "description": "Latest model with high-end camera and long battery life",
+  "category": "Electronics",
+  "price": 899.99,
+  "quantity": 50,
+  "_id": "product_id_1"
+}
+```
 
 
+### Expected Output for Kafka AutoMQ Integration for inventory service
 
+#### 1. **Producer: `stock-updated` Topic**
+
+The inventory service produces messages to the `stock-updated` topic whenever inventory changes occur (creating, updating, reserving, releasing, or adjusting inventory). These messages are sent via the `InventoryKafkaService.send_stock_update` method, which uses the `KafkaProducer` class to publish messages to AutoMQ.
+
+##### Scenarios Triggering Producer Messages
+ 
+The following API endpoints in `inventory.py` trigger a stock update message to the `stock-updated` topic:
+- **POST `/api/v1/inventory/`**: Creates a new inventory item.
+- **PUT `/api/v1/inventory/{product_id}`**: Updates an existing inventory item’s available quantity.
+- **POST `/api/v1/inventory/reserve`**: Reserves inventory, reducing available quantity.
+- **POST `/api/v1/inventory/adjust`**: Adjusts inventory (add or remove).
+- **POST `/api/v1/inventory/release`**: Releases reserved inventory, increasing available quantity.
+- **Low Stock Notification**: The `check_and_notify_low_stock` function sends a stock update when an item’s quantity falls below the reorder threshold.
+
+##### Producer Output
+
+- **Scenario**: A new inventory item is created via `POST /api/v1/inventory/` with `product_id="product_id_1"`, `available_quantity=100`.
+  - **Kafka Message**:
+    ```json
+    {
+      "product_id": "product_id_1",
+      "stock": 100
+    }
+    ```
+  - **Log Output** (from `kafka_producer.py`):
+    ```
+    INFO:Kafka producer started
+    INFO:Sent message to topic stock-updated: {'product_id': 'product_id_1', 'stock': 100}
+    ```
+- **Scenario**: Reserve 20 units via `POST /api/v1/inventory/reserve` for `product_id="product_id_1"`, reducing available quantity from 100 to 80.
+  - **Kafka Message**:
+    ```json
+    {
+      "product_id": "product_id_1",
+      "stock": 80
+    }
+    ```
+  - **Log Output**:
+    ```
+    INFO:Sent message to topic stock-updated: {'product_id': 'product_id_1', 'stock': 80}
+    INFO:Reserved 20 units of product product_id_1
+    ```
+- **Scenario**: Low stock detected (e.g., `available_quantity=4`, `reorder_threshold=5`) after an adjustment.
+  - **Kafka Message**:
+    ```json
+    {
+      "product_id": "product_id_1",
+      "stock": 4
+    }
+    ```
+  - **Log Output**:
+    ```
+    INFO:Sent low stock notification for product product_id_1 via Kafka
+    INFO:Sent message to topic stock-updated: {'product_id': 'product_id_1', 'stock': 4}
+    ```
 

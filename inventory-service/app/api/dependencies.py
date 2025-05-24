@@ -48,7 +48,8 @@ async def get_db() -> AsyncSession:
 # Kafka producer instance (singleton)
 kafka_producer = KafkaProducerService(
     bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
-    topic=settings.KAFKA_TOPIC
+    topic=settings.KAFKA_PRODUCER_TOPIC
+
 )
 
 # Kafka producer dependency

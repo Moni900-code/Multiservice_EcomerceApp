@@ -19,7 +19,7 @@ class InventoryKafkaService:
         import json
         try:
             message = json.loads(message_bytes.decode("utf-8"))
-            logger.info(f"Processing consumed message: {message}")
+            logger.info(f"Processing consumed mACessage: {message}")
             # TODO: Business logic here, e.g., update inventory, notify other services, etc.
         except Exception as e:
             logger.error(f"Error processing consumed message: {e}")
