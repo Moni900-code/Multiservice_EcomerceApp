@@ -1120,20 +1120,7 @@ Finally,
 * This setup enables event-driven architecture for decoupled microservices communication.
 
 
-Since you’ve requested that the documentation remain the same but with an updated message format for the `product-topic` consumed by the inventory service’s Kafka consumer, I’ll revise the relevant sections of the previous response to reflect the specified product service message format for the `product-topic`. The new message format is:
-
-```json
-{
-  "name": "Premium Smartphone",
-  "description": "Latest model with high-end camera and long battery life",
-  "category": "Electronics",
-  "price": 899.99,
-  "quantity": 50,
-  "_id": "product_id_1"
-}
-```
-
-
+#Now, 
 ### Expected Output for Kafka AutoMQ Integration for inventory service
 
 #### 1. **Producer: `stock-updated` Topic**
