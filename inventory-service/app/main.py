@@ -5,6 +5,15 @@ from app.api.routes import inventory
 from app.core.config import settings
 from app.db.postgresql import initialize_db, close_db_connection
 
+# Kafka services
+from app.service.kafka_producer import kafka_producer
+from app.service.kafka_consumer import kafka_consumer
+
+import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="Inventory Service API",
@@ -26,14 +35,35 @@ app.add_middleware(
 # Set up API routes
 app.include_router(inventory.router, prefix=settings.API_PREFIX)
 
+
 # Register startup and shutdown events
-app.add_event_handler("startup", initialize_db)
-app.add_event_handler("shutdown", close_db_connection)
+@app.on_event("startup")
+async def on_startup():
+    await initialize_db()
+
+    #  Start Kafka Producer
+    await kafka_producer.start()
+    logger.info(" Kafka producer started")
+
+    #  Start Kafka Consumer in background
+    asyncio.create_task(kafka_consumer.start())
+    logger.info(" Kafka consumer started")
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    await close_db_connection()
+
+    #  Stop Kafka Producer & Consumer
+    await kafka_producer.stop()
+    await kafka_consumer.stop()
+    logger.info(" Kafka producer and consumer stopped")
+
 
 # Health check endpoint
 @app.get("/health")
 async def health_check():
     return {"status": "ok", "service": "inventory-service"}
+
 
 if __name__ == "__main__":
     import uvicorn

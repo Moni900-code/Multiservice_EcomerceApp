@@ -17,18 +17,28 @@ from app.db.postgresql import get_db
 from app.services.product import product_service
 from app.core.config import settings
 
+#import kafka
+from app.services.inventory_kafka_service import InventoryKafkaService  
+
 # Configure logger
 logger = logging.getLogger(__name__)
 
 # Create router
 router = APIRouter(prefix="/inventory", tags=["inventory"])
 
+async def get_kafka_producer():
+    await InventoryKafkaService.kafka_producer.start()
+    try:
+        yield InventoryKafkaService.kafka_producer
+    finally:
+        await InventoryKafkaService.kafka_producer.stop()
 
 @router.post("/", response_model=InventoryItemResponse, status_code=201)
 async def create_inventory_item(
     item: InventoryItemCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(is_admin)  # Only admins can create inventory
+    current_user: Dict[str, Any] = Depends(is_admin),  # Only admins can create inventory
+    kafka_producer = Depends(get_kafka_producer) #kafka producer dependency
 ):
     """
     Create a new inventory item.
@@ -37,6 +47,7 @@ async def create_inventory_item(
     1. Verify the product exists
     2. Create the inventory record
     3. Create a history entry
+    4. Send Kafka message for stock update
     """
     # Verify the product exists
     product = await product_service.get_product(item.product_id)
@@ -71,6 +82,12 @@ async def create_inventory_item(
         
         await db.commit()
         await db.refresh(db_item)
+
+        # stock updated into kafka
+        await InventoryKafkaService.send_stock_update(
+            product_id=item.product_id,
+            stock=item.available_quantity
+        )
         
         logger.info(f"Created inventory item for product {item.product_id}")
         return db_item
@@ -158,7 +175,8 @@ async def update_inventory_item(
     product_id: str,
     item_update: InventoryItemUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(is_admin)  # Only admins can update inventory
+    current_user: Dict[str, Any] = Depends(is_admin),  # Only admins can update inventory
+    kafka_producer=Depends(get_kafka_producer)  # Kafka Producer dependency
 ):
     """
     Update inventory item for a product.
@@ -214,6 +232,14 @@ async def update_inventory_item(
         db.add(history_entry)
     
     await db.commit()
+
+    #send stock update to kafka
+    if "available_quantity" in update_data:
+        await InventoryKafkaService.send_stock_update(
+            product_id=product_id,
+            stock=update_data["available_quantity"]
+        )
+
     
     # Check for low stock and send notification if needed
     await check_and_notify_low_stock(updated_item)
@@ -226,7 +252,8 @@ async def update_inventory_item(
 async def reserve_inventory(
     reservation: InventoryReserve,
     db: AsyncSession = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    kafka_producer=Depends(get_kafka_producer)  # Kafka Producer dependency
 ):
     """
     Reserve inventory for an order.
@@ -235,6 +262,7 @@ async def reserve_inventory(
     1. Check if inventory is available
     2. Reduce available quantity and increase reserved quantity
     3. Create a history entry
+    4. Send Kafka message for stock update
     """
     # Check if inventory exists and has sufficient quantity
     query = select(InventoryItem).where(InventoryItem.product_id == reservation.product_id)
@@ -284,6 +312,12 @@ async def reserve_inventory(
     
     await db.commit()
     
+     # send stock update to kafka
+    await InventoryKafkaService.send_stock_update(
+        product_id=reservation.product_id,
+        stock=new_available
+    )
+    
     # Check for low stock
     await check_and_notify_low_stock(updated_item)
     
@@ -311,6 +345,7 @@ async def release_inventory(
     1. Check if inventory exists and has sufficient reserved quantity
     2. Reduce reserved quantity and increase available quantity
     3. Create a history entry
+    4. Send Kafka message for stock update
     """
     # Check if inventory exists
     query = select(InventoryItem).where(InventoryItem.product_id == release.product_id)
@@ -361,6 +396,12 @@ async def release_inventory(
     db.add(history_entry)
     
     await db.commit()
+
+    # send stock update to kafka
+    await InventoryKafkaService.send_stock_update(
+        product_id=release.product_id,
+        stock=new_available
+    )
     
     logger.info(f"Released {release.quantity} units of product {release.product_id}")
     
@@ -377,7 +418,8 @@ async def release_inventory(
 async def adjust_inventory(
     adjustment: InventoryAdjust,
     db: AsyncSession = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(is_admin)  # Only admins can adjust inventory
+    current_user: Dict[str, Any] = Depends(is_admin),  # Only admins can adjust inventory
+    kafka_producer=Depends(get_kafka_producer) # kafka producer dependency
 ):
     """
     Adjust inventory levels (add or remove).
@@ -386,6 +428,7 @@ async def adjust_inventory(
     1. Check if inventory exists
     2. Apply the adjustment (positive or negative)
     3. Create a history entry
+    4. Send Kafka message for stock update
     """
     # Check if inventory exists
     query = select(InventoryItem).where(InventoryItem.product_id == adjustment.product_id)
@@ -435,6 +478,13 @@ async def adjust_inventory(
     db.add(history_entry)
     
     await db.commit()
+
+    # Send Kafka message for stock update
+    await InventoryKafkaService.send_stock_update(
+        product_id=adjustment.product_id,
+        stock=new_quantity
+    )
+
     
     # Check for low stock
     await check_and_notify_low_stock(updated_item)
@@ -522,7 +572,7 @@ async def check_and_notify_low_stock(inventory_item: InventoryItem):
             product = await product_service.get_product(inventory_item.product_id)
             product_name = product.get("name", inventory_item.product_id) if product else inventory_item.product_id
             
-            notification_data = {
+            message = {
                 "type": "low_stock",
                 "product_id": inventory_item.product_id,
                 "product_name": product_name,
@@ -530,13 +580,11 @@ async def check_and_notify_low_stock(inventory_item: InventoryItem):
                 "threshold": inventory_item.reorder_threshold,
                 "timestamp": datetime.utcnow().isoformat()
             }
+            await InventoryKafkaService.send_stock_update(
+                product_id=inventory_item.product_id,
+                stock=inventory_item.available_quantity
+            )
             
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                await client.post(
-                    str(settings.NOTIFICATION_URL),
-                    json=notification_data
-                )
-                
-            logger.info(f"Sent low stock notification for product {inventory_item.product_id}")
+            logger.info(f"Sent low stock notification for product {inventory_item.product_id} via Kafka")
         except Exception as e:
             logger.error(f"Failed to send low stock notification: {str(e)}")
