@@ -1,6 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+# kafka setting:
+from app.services.kafka_producer import start_kafka, stop_kafka
+
 from app.api.routes import products
 from app.core.config import settings
 from app.db.mongodb import close_mongo_connection, connect_to_mongo
@@ -28,12 +31,16 @@ app.include_router(products.router, prefix=settings.API_PREFIX)
 
 # Register startup and shutdown events
 app.add_event_handler("startup", connect_to_mongo)
+app.add_event_handler("startup", start_kafka)       # Kafka connection start
+
 app.add_event_handler("shutdown", close_mongo_connection)
+app.add_event_handler("shutdown", stop_kafka)       # Kafka connection stop
 
 # Health check endpoint
 @app.get("/health")
 async def health_check():
     return {"status": "ok", "service": "product-service"}
+
 
 if __name__ == "__main__":
     import uvicorn

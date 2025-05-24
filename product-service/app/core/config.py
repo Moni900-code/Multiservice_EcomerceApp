@@ -1,4 +1,3 @@
-import os
 from typing import Optional
 from pydantic import BaseSettings, validator, AnyHttpUrl
 
@@ -19,7 +18,10 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "development-secret-key"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     
-    # Validate URLs are properly formatted
+    # Kafka settings — note the names must match .env keys
+    KAFKA_BOOTSTRAP_SERVERS: str  # required, read from .env
+    KAFKA_TOPIC: str              # required, read from .env
+    
     @validator("INVENTORY_SERVICE_URL", pre=True)
     def validate_service_urls(cls, v):
         if isinstance(v, str) and not v.startswith(("http://", "https://")):
@@ -30,5 +32,4 @@ class Settings(BaseSettings):
         env_file = ".env"
         case_sensitive = True
 
-# Create global settings object
 settings = Settings()

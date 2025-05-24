@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     LOW_STOCK_THRESHOLD: int = 5
     ENABLE_NOTIFICATIONS: bool = True
     NOTIFICATION_URL: Optional[AnyHttpUrl] = None
+
+    # ✅ Kafka settings
+    KAFKA_BOOTSTRAP_SERVERS: str  # e.g., "localhost:9092"
+    KAFKA_PRODUCER_TOPIC: str      # e.g., "product_created"
+    KAFKA_CONSUMER_TOPIC: str  # e.g., "stock_updated"
     
     # Validate URLs are properly formatted
     @validator("PRODUCT_SERVICE_URL", "NOTIFICATION_URL", pre=True)

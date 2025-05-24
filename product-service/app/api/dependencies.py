@@ -1,6 +1,11 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 
+
+from app.services.kafka_producer import KafkaProducerService
+from app.core.config import settings
+
+
 from app.db.mongodb import get_database
 
 # OAuth2 configuration - in a microservice architecture, 
@@ -28,3 +33,15 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
 async def get_db():
     """Dependency for database access."""
     return get_database()
+
+
+
+#kafka setting
+
+kafka_producer = KafkaProducerService(
+    bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
+    topic=settings.KAFKA_TOPIC
+)
+
+async def get_kafka_producer() -> KafkaProducerService:
+    return kafka_producer

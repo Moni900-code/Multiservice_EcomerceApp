@@ -1,4 +1,4 @@
-#version: '3.8'
+version: '3.8'
 
 services:
   # API Gateway
@@ -27,10 +27,12 @@ services:
       - "8000:8000"
     environment:
       - INVENTORY_SERVICE_URL=http://inventory-service:8002/api/v1
+      - KAFKA_BROKER=automq:9092
     env_file:
       - ./product-service/.env
     depends_on:
       - mongodb-product
+      - automq
     networks:
       - microservice-network
 
@@ -54,10 +56,12 @@ services:
       - USER_SERVICE_URL=http://user-service:8003/api/v1
       - PRODUCT_SERVICE_URL=http://product-service:8000/api/v1
       - INVENTORY_SERVICE_URL=http://inventory-service:8002/api/v1
+      - KAFKA_BROKER=automq:9092
     env_file:
       - ./order-service/.env
     depends_on:
       - mongodb-order
+      - automq
     networks:
       - microservice-network
 
@@ -80,10 +84,12 @@ services:
     environment:
       - PRODUCT_SERVICE_URL=http://product-service:8000/api/v1
       - DATABASE_URL=postgresql://postgres:postgres@postgres-inventory:5432/inventory_db
+      - KAFKA_BROKER=automq:9092
     env_file:
       - ./inventory-service/.env
     depends_on:
       - postgres-inventory
+      - automq
     networks:
       - microservice-network
 
@@ -107,10 +113,12 @@ services:
       - "8003:8003"
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@postgres-user:5432/user_db
+      - KAFKA_BROKER=automq:9092
     env_file:
       - ./user-service/.env
     depends_on:
       - postgres-user
+      - automq
     networks:
       - microservice-network
 
@@ -125,22 +133,12 @@ services:
     networks:
       - microservice-network
 
-networks:
-  microservice-network:
-    driver: bridge
-
-volumes:
-  mongodb_product_data:
-  mongodb_order_data:
-  postgres_inventory_data:
-  postgres_user_data:
-
-
+  # Kafka Service (AutoMQ)
   automq:
     image: automq/automq-ce:latest
     ports:
-      - "9092:9092"    # Kafka protocol port
-      - "8080:8080"    # AutoMQ Admin UI (optional)
+      - "9092:9092"
+      - "8080:8080"
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
@@ -150,3 +148,14 @@ volumes:
       - automq_data:/kafka-logs
     networks:
       - microservice-network
+
+networks:
+  microservice-network:
+    driver: bridge
+
+volumes:
+  mongodb_product_data:
+  mongodb_order_data:
+  postgres_inventory_data:
+  postgres_user_data:
+  automq_data:

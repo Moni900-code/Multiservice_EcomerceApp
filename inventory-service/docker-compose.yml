@@ -13,9 +13,12 @@ services:
       - .env
     depends_on:
       - postgres
+      - automq 
     networks:
       - inventory-network
       - microservice-network
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=automq:9092   # Kafka broker address
 
   postgres:
     image: postgres:13

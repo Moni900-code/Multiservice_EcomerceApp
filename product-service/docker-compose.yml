@@ -13,6 +13,7 @@ services:
       - .env
     depends_on:
       - mongodb
+      - automq  # Kafka service er upor depend kore
     networks:
       - product-network
       - microservice-network
@@ -20,6 +21,7 @@ services:
       - USER_SERVICE_URL=http://user-service:8003/api/v1
       - INVENTORY_SERVICE_URL=http://inventory-service:8002/api/v1
       - ORDER_SERVICE_URL=http://order-service:8001/api/v1
+      - KAFKA_BOOTSTRAP_SERVERS=automq:9092  # Kafka broker address
 
   mongodb:
     image: mongo:5.0
@@ -33,8 +35,9 @@ services:
 networks:
   product-network:
     driver: bridge
+
   microservice-network:
-    external: true  # Changed from driver: bridge to external: true
+    external: true  # Make sure the shared network is created in main compose
 
 volumes:
   mongodb_data:
