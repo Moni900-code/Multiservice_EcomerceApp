@@ -1,4 +1,4 @@
-from app.service.kafka_producer import kafka_producer
+from app.services.kafka_producer import kafka_producer
 from app.core.config import settings
 import logging
 

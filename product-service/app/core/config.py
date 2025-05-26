@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     
     # Kafka settings — note the names must match .env keys
-    KAFKA_BOOTSTRAP_SERVERS: str  # required, read from .env
+    KAFKA_BOOTSTRAP_SERVERS: str = "automq:9092"  # required, read from .env
     KAFKA_TOPIC: str              # required, read from .env
     
     @validator("INVENTORY_SERVICE_URL", pre=True)

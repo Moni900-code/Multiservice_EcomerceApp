@@ -6,8 +6,8 @@ from app.core.config import settings
 from app.db.postgresql import initialize_db, close_db_connection
 
 # Kafka services
-from app.service.kafka_producer import kafka_producer
-from app.service.kafka_consumer import kafka_consumer
+from app.services.kafka_producer import kafka_producer
+from app.services.kafka_consumer import kafka_consumer
 
 import asyncio
 import logging

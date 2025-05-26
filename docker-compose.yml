@@ -27,7 +27,7 @@ services:
       - "8000:8000"
     environment:
       - INVENTORY_SERVICE_URL=http://inventory-service:8002/api/v1
-      - KAFKA_BROKER=automq:9092
+      - KAFKA_BOOTSTRAP_SERVERS=automq:9092
     env_file:
       - ./product-service/.env
     depends_on:
@@ -84,7 +84,7 @@ services:
     environment:
       - PRODUCT_SERVICE_URL=http://product-service:8000/api/v1
       - DATABASE_URL=postgresql://postgres:postgres@postgres-inventory:5432/inventory_db
-      - KAFKA_BROKER=automq:9092
+      - KAFKA_BOOTSTRAP_SERVERS=automq:9092
     env_file:
       - ./inventory-service/.env
     depends_on:
@@ -135,17 +135,16 @@ services:
 
   # Kafka Service (AutoMQ)
   automq:
-    image: automq/automq-ce:latest
+    container_name: automq
+    image: automqinc/automq:latest
     ports:
       - "9092:9092"
-      - "8080:8080"
     environment:
-      KAFKA_BROKER_ID: 1
+      BROKER_ID: 1
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://automq:9092
-      KAFKA_LOG_DIRS: /kafka-logs
     volumes:
-      - automq_data:/kafka-logs
+      - automq_data:/data
     networks:
       - microservice-network
 
@@ -158,4 +157,4 @@ volumes:
   mongodb_order_data:
   postgres_inventory_data:
   postgres_user_data:
-  automq_data:
+  automq_data:  

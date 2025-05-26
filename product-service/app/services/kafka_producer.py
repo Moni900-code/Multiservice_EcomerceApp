@@ -1,7 +1,6 @@
 import json
 import logging
 from aiokafka import AIOKafkaProducer
-from app.core.config import settings  
 
 logger = logging.getLogger(__name__)
 
@@ -10,7 +9,7 @@ class KafkaProducer:
         self.producer = None
 
     async def start(self):
-        self.producer = AIOKafkaProducer(bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS)
+        self.producer = AIOKafkaProducer(bootstrap_servers='automq:9092')  # হার্ডকোড করা
         await self.producer.start()
         logger.info("Kafka producer started successfully")
 
@@ -30,10 +29,8 @@ class KafkaProducer:
             logger.error(f"Failed to send message to topic {topic}: {e}")
             raise
 
-# Create singleton KafkaProducer instance
 kafka_producer = KafkaProducer()
 
-# Helper async functions for FastAPI startup/shutdown event handlers
 async def start_kafka():
     await kafka_producer.start()
 
