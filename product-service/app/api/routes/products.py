@@ -7,7 +7,7 @@ import logging
 from app.models.product import ProductCreate, ProductResponse, ProductUpdate, PyObjectId
 from app.api.dependencies import get_current_user, get_db, get_kafka_producer
 from app.services.inventory_service import inventory_service
-from app.services.kafka_producer import KafkaProducerService
+from app.services.kafka_producer import KafkaProducer
 
 # Logger configuration
 logger = logging.getLogger(__name__)
@@ -21,7 +21,7 @@ async def create_product(
     product: ProductCreate,
     db: AsyncIOMotorDatabase = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_current_user),
-    kafka_producer: KafkaProducerService = Depends(get_kafka_producer)
+    kafka_producer: KafkaProducer = Depends(get_kafka_producer)
 ):
     """
     Create a new product and automatically create inventory for it.

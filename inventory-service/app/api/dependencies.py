@@ -5,7 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.postgresql import get_db
 
 from app.core.config import settings
-from app.services.kafka_producer import KafkaProducerService
+from app.services.kafka_producer import KafkaProducer
+from app.services.kafka_producer import kafka_producer
 
 # OAuth2 configuration - in a microservice architecture, 
 # actual token validation would typically happen at the gateway level
@@ -45,13 +46,8 @@ async def get_db() -> AsyncSession:
     return await get_db()
 
 
-# Kafka producer instance (singleton)
-kafka_producer = KafkaProducerService(
-    bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
-    topic=settings.KAFKA_PRODUCER_TOPIC
 
-)
 
 # Kafka producer dependency
-async def get_kafka_producer() -> KafkaProducerService:
+async def get_kafka_producer() -> KafkaProducer:
     return kafka_producer

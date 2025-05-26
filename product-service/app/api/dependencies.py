@@ -2,7 +2,8 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 
 
-from app.services.kafka_producer import KafkaProducerService
+from app.services.kafka_producer import KafkaProducer
+from app.services.kafka_producer import kafka_producer
 from app.core.config import settings
 
 
@@ -36,12 +37,7 @@ async def get_db():
 
 
 
-#kafka setting
 
-kafka_producer = KafkaProducerService(
-    bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
-    topic=settings.KAFKA_TOPIC
-)
 
-async def get_kafka_producer() -> KafkaProducerService:
+async def get_kafka_producer() -> KafkaProducer:
     return kafka_producer

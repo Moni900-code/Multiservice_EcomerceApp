@@ -17,7 +17,7 @@ from app.db.postgresql import get_db
 from app.services.product import product_service
 from app.core.config import settings
 
-#import kafka
+
 from app.services.inventory_kafka_service import InventoryKafkaService  
 
 # Configure logger
