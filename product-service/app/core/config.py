@@ -18,10 +18,12 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "development-secret-key"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     
-    # Kafka settings — note the names must match .env keys
-    KAFKA_BOOTSTRAP_SERVERS: str = "automq:9092"  # required, read from .env
-    KAFKA_TOPIC: str              # required, read from .env
+    # Kafka settings
+    KAFKA_BOOTSTRAP_SERVERS: str = "automq:9092"
+    KAFKA_TOPIC_PRODUCTS: str = "product-topic"
     
+    class Config:
+        env_file = ".env"
     @validator("INVENTORY_SERVICE_URL", pre=True)
     def validate_service_urls(cls, v):
         if isinstance(v, str) and not v.startswith(("http://", "https://")):

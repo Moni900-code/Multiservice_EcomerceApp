@@ -1,12 +1,11 @@
 #version: '3.8'
 
 services:
-  # API Gateway
   nginx-gateway:
     image: nginx:latest
     ports:
       - "80:80"
-      - "443:443"  # For HTTPS
+      - "443:443"
     volumes:
       - ./nginx/conf.d:/etc/nginx/conf.d
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf
@@ -18,7 +17,6 @@ services:
     networks:
       - microservice-network
 
-  # Product Service and its database
   product-service:
     build:
       context: ./product-service
@@ -31,10 +29,19 @@ services:
     env_file:
       - ./product-service/.env
     depends_on:
-      - mongodb-product
-      - automq
+      mongodb-product:
+        condition: service_healthy
+      automq:
+        condition: service_healthy
     networks:
       - microservice-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   mongodb-product:
     image: mongo:5.0
@@ -44,8 +51,14 @@ services:
       - microservice-network
     environment:
       - MONGO_INITDB_DATABASE=product_db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongo", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
-  # Order Service and its database
   order-service:
     build:
       context: ./order-service
@@ -56,14 +69,21 @@ services:
       - USER_SERVICE_URL=http://user-service:8003/api/v1
       - PRODUCT_SERVICE_URL=http://product-service:8000/api/v1
       - INVENTORY_SERVICE_URL=http://inventory-service:8002/api/v1
-      - KAFKA_BROKER=automq:9092
     env_file:
       - ./order-service/.env
     depends_on:
-      - mongodb-order
-      - automq
+      mongodb-order:
+        condition: service_healthy
+ 
     networks:
       - microservice-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8001/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   mongodb-order:
     image: mongo:5.0
@@ -73,8 +93,14 @@ services:
       - microservice-network
     environment:
       - MONGO_INITDB_DATABASE=order_db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongo", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
-  # Inventory Service and its database
   inventory-service:
     build:
       context: ./inventory-service
@@ -88,10 +114,19 @@ services:
     env_file:
       - ./inventory-service/.env
     depends_on:
-      - postgres-inventory
-      - automq
+      postgres-inventory:
+        condition: service_healthy
+      automq:
+        condition: service_healthy
     networks:
       - microservice-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8002/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   postgres-inventory:
     image: postgres:13
@@ -103,8 +138,14 @@ services:
       - postgres_inventory_data:/var/lib/postgresql/data
     networks:
       - microservice-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d inventory_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
-  # User Service and its database
   user-service:
     build:
       context: ./user-service
@@ -113,14 +154,21 @@ services:
       - "8003:8003"
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@postgres-user:5432/user_db
-      - KAFKA_BROKER=automq:9092
     env_file:
       - ./user-service/.env
     depends_on:
-      - postgres-user
-      - automq
+      postgres-user:
+        condition: service_healthy
+
     networks:
       - microservice-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8003/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   postgres-user:
     image: postgres:13
@@ -132,21 +180,71 @@ services:
       - postgres_user_data:/var/lib/postgresql/data
     networks:
       - microservice-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d user_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
-  # Kafka Service (AutoMQ)
+  minio:
+    image: minio/minio:latest
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - microservice-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
   automq:
     container_name: automq
     image: automqinc/automq:latest
     ports:
       - "9092:9092"
+      - "9093:9093"
+    depends_on:
+      minio:
+        condition: service_healthy
     environment:
       BROKER_ID: 1
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://automq:9092
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_NODE_ID: 1
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@automq:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_LOG_DIRS: /data
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      AWS_S3_ENDPOINT: http://minio:9000
+      AWS_S3_REGION: us-east-1
+      AWS_S3_DATA_BUCKET: automq-data
+      AWS_S3_OPS_BUCKET: automq-ops
+      S3_WAL_PATH: /data/automq-wal
     volumes:
       - automq_data:/data
     networks:
       - microservice-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9092"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
 networks:
   microservice-network:
@@ -157,4 +255,5 @@ volumes:
   mongodb_order_data:
   postgres_inventory_data:
   postgres_user_data:
-  automq_data:  
+  minio_data:
+  automq_data:
