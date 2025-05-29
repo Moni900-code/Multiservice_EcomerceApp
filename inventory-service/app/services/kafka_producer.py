@@ -6,12 +6,13 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 class KafkaProducer:
-    def __init__(self):
+    def __init__(self, bootstrap_servers: str):
+        self.bootstrap_servers = bootstrap_servers
         self.producer = None
 
     async def start(self):
         self.producer = AIOKafkaProducer(
-            bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
+            bootstrap_servers=self.bootstrap_servers,  # ✅ Use the instance variable
         )
         await self.producer.start()
         logger.info("Kafka producer started")
@@ -32,5 +33,5 @@ class KafkaProducer:
         except Exception as e:
             logger.error(f"Failed to send message: {e}")
 
-# Create singleton producer instance
-kafka_producer = KafkaProducer()
+# ✅ Fix: Pass bootstrap_servers explicitly
+kafka_producer = KafkaProducer(bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS)

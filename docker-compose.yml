@@ -5,7 +5,6 @@ services:
     image: nginx:latest
     ports:
       - "80:80"
-      - "443:443"
     volumes:
       - ./nginx/conf.d:/etc/nginx/conf.d
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf
@@ -29,19 +28,15 @@ services:
     env_file:
       - ./product-service/.env
     depends_on:
-      mongodb-product:
-        condition: service_healthy
-      automq:
-        condition: service_healthy
+      - mongodb-product
+      - automq
     networks:
       - microservice-network
-    restart: unless-stopped
+    restart: on-failure
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
-      interval: 30s
-      timeout: 10s
+      interval: 60s
       retries: 3
-      start_period: 40s
 
   mongodb-product:
     image: mongo:5.0
@@ -51,13 +46,7 @@ services:
       - microservice-network
     environment:
       - MONGO_INITDB_DATABASE=product_db
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "mongo", "--eval", "db.adminCommand('ping')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
+    restart: on-failure
 
   order-service:
     build:
@@ -72,18 +61,14 @@ services:
     env_file:
       - ./order-service/.env
     depends_on:
-      mongodb-order:
-        condition: service_healthy
- 
+      - mongodb-order
     networks:
       - microservice-network
-    restart: unless-stopped
+    restart: on-failure
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8001/health || exit 1"]
-      interval: 30s
-      timeout: 10s
+      interval: 60s
       retries: 3
-      start_period: 40s
 
   mongodb-order:
     image: mongo:5.0
@@ -93,13 +78,7 @@ services:
       - microservice-network
     environment:
       - MONGO_INITDB_DATABASE=order_db
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "mongo", "--eval", "db.adminCommand('ping')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
+    restart: on-failure
 
   inventory-service:
     build:
@@ -114,19 +93,15 @@ services:
     env_file:
       - ./inventory-service/.env
     depends_on:
-      postgres-inventory:
-        condition: service_healthy
-      automq:
-        condition: service_healthy
+      - postgres-inventory
+      - automq
     networks:
       - microservice-network
-    restart: unless-stopped
+    restart: on-failure
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8002/health || exit 1"]
-      interval: 30s
-      timeout: 10s
+      interval: 60s
       retries: 3
-      start_period: 40s
 
   postgres-inventory:
     image: postgres:13
@@ -138,13 +113,7 @@ services:
       - postgres_inventory_data:/var/lib/postgresql/data
     networks:
       - microservice-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d inventory_db"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
+    restart: on-failure
 
   user-service:
     build:
@@ -157,18 +126,14 @@ services:
     env_file:
       - ./user-service/.env
     depends_on:
-      postgres-user:
-        condition: service_healthy
-
+      - postgres-user
     networks:
       - microservice-network
-    restart: unless-stopped
+    restart: on-failure
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8003/health || exit 1"]
-      interval: 30s
-      timeout: 10s
+      interval: 60s
       retries: 3
-      start_period: 40s
 
   postgres-user:
     image: postgres:13
@@ -180,52 +145,21 @@ services:
       - postgres_user_data:/var/lib/postgresql/data
     networks:
       - microservice-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d user_db"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-
-  minio:
-    image: minio/minio:latest
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-    command: server /data --console-address ":9001"
-    volumes:
-      - minio_data:/data
-    networks:
-      - microservice-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+    restart: on-failure
 
   automq:
     container_name: automq
     image: automqinc/automq:latest
     ports:
       - "9092:9092"
-      - "9093:9093"
     depends_on:
-      minio:
-        condition: service_healthy
+      - minio
     environment:
       BROKER_ID: 1
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://automq:9092
-      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_PROCESS_ROLES: broker
       KAFKA_NODE_ID: 1
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@automq:9093
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
       KAFKA_LOG_DIRS: /data
       AWS_ACCESS_KEY_ID: minioadmin
       AWS_SECRET_ACCESS_KEY: minioadmin
@@ -233,18 +167,33 @@ services:
       AWS_S3_REGION: us-east-1
       AWS_S3_DATA_BUCKET: automq-data
       AWS_S3_OPS_BUCKET: automq-ops
-      S3_WAL_PATH: /data/automq-wal
     volumes:
       - automq_data:/data
     networks:
       - microservice-network
-    restart: unless-stopped
+    restart: on-failure
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9092"]
-      interval: 30s
-      timeout: 10s
+      test: ["CMD", "nc", "-z", "localhost", "9092"]
+      interval: 60s
       retries: 3
-      start_period: 40s
+
+  minio:
+    image: minio/minio:latest
+    ports:
+      - "9000:9000"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data
+    volumes:
+      - minio_data:/data
+    networks:
+      - microservice-network
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 60s
+      retries: 3
 
 networks:
   microservice-network:
