@@ -34,7 +34,7 @@ AsyncSessionLocal = sessionmaker(
 Base = declarative_base()
 
 
-async def initialize_db():
+async def init_db():  # Changed from initialize_db to init_db
     """Initialize database with required tables."""
     async with engine.begin() as conn:
         # Create tables if they don't exist
@@ -59,6 +59,7 @@ async def get_db():
 
 
 @lru_cache()
+
 def get_settings():
     """Return cached settings object."""
     return settings

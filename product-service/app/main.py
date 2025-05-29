@@ -1,12 +1,15 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+import logging
 
-# kafka setting:
 from app.services.kafka_producer import start_kafka, stop_kafka
-
 from app.api.routes import products
 from app.core.config import settings
-from app.db.mongodb import close_mongo_connection, connect_to_mongo
+from app.db.mongodb import connect_to_mongo, close_mongo_connection
+
+# Logging setup
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -17,30 +20,35 @@ app = FastAPI(
     redoc_url=f"{settings.API_PREFIX}/redoc",
 )
 
-# Set up CORS middleware
+# CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # For production, restrict to specific origins
+    allow_origins=["*"],  # Use specific domains in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Set up API routes
+# Include router
 app.include_router(products.router, prefix=settings.API_PREFIX)
 
-# Register startup and shutdown events
-app.add_event_handler("startup", connect_to_mongo)
-app.add_event_handler("startup", start_kafka)       # Kafka connection start
+# Startup and shutdown events
+@app.on_event("startup")
+async def startup_event():
+    logger.info("Starting product service...")
+    await connect_to_mongo()
+    await start_kafka()
 
-app.add_event_handler("shutdown", close_mongo_connection)
-app.add_event_handler("shutdown", stop_kafka)       # Kafka connection stop
+@app.on_event("shutdown")
+async def shutdown_event():
+    logger.info("Shutting down product service...")
+    await close_mongo_connection()
+    await stop_kafka()
 
 # Health check endpoint
 @app.get("/health")
 async def health_check():
     return {"status": "ok", "service": "product-service"}
-
 
 if __name__ == "__main__":
     import uvicorn

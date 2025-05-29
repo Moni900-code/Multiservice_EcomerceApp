@@ -30,7 +30,7 @@ class KafkaProducer:
             await self.producer.stop()
             logger.info("Kafka producer stopped.")
 
-# ✅ Corrected: Provide the required argument
+#Corrected: Provide the required argument
 kafka_producer = KafkaProducer(bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS)
 
 # FastAPI startup/shutdown events

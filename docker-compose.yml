@@ -25,6 +25,7 @@ services:
       - USER_SERVICE_URL=http://user-service:8003/api/v1
       - INVENTORY_SERVICE_URL=http://inventory-service:8002/api/v1
       - ORDER_SERVICE_URL=http://order-service:8001/api/v1
+      - KAFKA_PRODUCER_TOPIC=product-topic
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
     env_file:
       - ./product-service/.env
@@ -109,12 +110,15 @@ services:
       - PRODUCT_SERVICE_URL=http://product-service:8000/api/v1
       - DATABASE_URL=postgresql://postgres:postgres@postgres-inventory:5432/inventory_db
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - KAFKA_PRODUCER_TOPIC=product-topic
     env_file:
       - ./inventory-service/.env
     depends_on:
       kafka:
         condition: service_healthy
       postgres-inventory:
+        condition: service_healthy
+      zookeeper:
         condition: service_healthy
     networks:
       - microservice-network
@@ -199,7 +203,7 @@ services:
       - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=true
       - KAFKA_CFG_NUM_PARTITIONS=3
       - KAFKA_CFG_DEFAULT_REPLICATION_FACTOR=1
-      - KAFKA_ENABLE_KRAFT=no
+      - KAFKA_AUTO_CREATE_TOPICS_ENABLE=true
     depends_on:
       zookeeper:
         condition: service_healthy

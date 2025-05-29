@@ -34,7 +34,9 @@ class Settings(BaseSettings):
     KAFKA_BOOTSTRAP_SERVERS: str  # e.g., "kafka:9092"
     KAFKA_PRODUCER_TOPIC: str      # e.g., "product_created"
     KAFKA_CONSUMER_TOPIC: str  # e.g., "stock_updated"
-    
+    PRODUCT_SERVICE_URL: str = "http://product-service:8000/api/v1"
+    INVENTORY_SERVICE_URL: str = "http://inventory-service:8002/api/v1"   
+     
     # Validate URLs are properly formatted
     @validator("PRODUCT_SERVICE_URL", "NOTIFICATION_URL", pre=True)
     def validate_service_urls(cls, v):
