@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   product-service:
     build:
@@ -12,32 +10,42 @@ services:
     env_file:
       - .env
     depends_on:
-      - mongodb
-      - automq  # Kafka service er upor depend kore
+      kafka:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
     networks:
-      - product-network
       - microservice-network
     environment:
       - USER_SERVICE_URL=http://user-service:8003/api/v1
       - INVENTORY_SERVICE_URL=http://inventory-service:8002/api/v1
       - ORDER_SERVICE_URL=http://order-service:8001/api/v1
-      - KAFKA_BOOTSTRAP_SERVERS=automq:9092  # Kafka broker address
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+    restart: on-failure
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
 
   mongodb:
     image: mongo:5.0
-    ports:
-      - "27017:27017"
     volumes:
       - mongodb_data:/data/db
     networks:
-      - product-network
+      - microservice-network
+    environment:
+      - MONGO_INITDB_DATABASE=product_db
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "mongo", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 networks:
-  product-network:
-    driver: bridge
-
   microservice-network:
-    external: true  # Make sure the shared network is created in main compose
+    external: true
 
 volumes:
   mongodb_data:

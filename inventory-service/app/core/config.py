@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     NOTIFICATION_URL: Optional[AnyHttpUrl] = None
 
     # ✅ Kafka settings
-    KAFKA_BOOTSTRAP_SERVERS: str  # e.g., "localhost:9092"
+    KAFKA_BOOTSTRAP_SERVERS: str  # e.g., "kafka:9092"
     KAFKA_PRODUCER_TOPIC: str      # e.g., "product_created"
     KAFKA_CONSUMER_TOPIC: str  # e.g., "stock_updated"
     

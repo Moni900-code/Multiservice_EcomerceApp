@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     
     # Kafka settings
-    KAFKA_BOOTSTRAP_SERVERS: str = "automq:9092"
+    KAFKA_BOOTSTRAP_SERVERS: str = "kafka:9092"
     KAFKA_TOPIC_PRODUCTS: str = "product-topic"
     
     class Config:
