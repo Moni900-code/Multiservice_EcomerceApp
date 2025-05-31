@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/inventory", tags=["inventory"])
 
 async def get_kafka_producer():
-    await kafka_service.start()
+    await kafka_service.start_producer()
     try:
         yield kafka_service.kafka_producer
     finally:
@@ -81,7 +81,6 @@ async def create_inventory_item(
             detail=f"Inventory item for product {item.product_id} already exists"
         )
 
-# বাকি কোড অপরিবর্তিত (আগের মতো)
 @router.get("/", response_model=List[InventoryItemResponse])
 async def get_inventory_items(
     skip: int = Query(0, ge=0),

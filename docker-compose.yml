@@ -190,7 +190,7 @@ services:
 
   kafka:
     image: bitnami/kafka:3.4
-    container_name: automq
+    container_name: kafka
     ports:
       - "9092:9092"
     environment:
