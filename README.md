@@ -1,136 +1,176 @@
 
-### 🔗 Kafka Integration for Product & Inventory Services (using AutoMQ)
 
-To ensure real-time synchronization between the **Product** and **Inventory** microservices, we integrate them using **Kafka (AutoMQ)** as a high-performance, distributed message broker.
+## Apache Kafka Integration for Product & Inventory Services
 
-## Why Kafka AutoMQ?
+To ensure real-time synchronization between the **Product** and **Inventory** microservices, we use **Apache Kafka** as a distributed message broker.
 
-* Connects Product & Inventory services without direct calls.
-* Sends product and inventory updates as messages.
-* Reliable, scalable, and keeps track of changes.
+### Why Apache Kafka?
 
----
-# Workflow Diagram: 
-![alt text](images/Kafka_architecture.png)
-
+- **Decoupling**: Enables asynchronous communication between services without direct API calls.
+- **Event-Driven**: Publishes product and inventory updates to Kafka topics for real-time processing.
+- **Reliable & Scalable**: Offers fault-tolerant messaging with high throughput and persistent storage.
 
 ---
 
-## Explanation of the workflow
+## Workflow Diagram
+![Kafka Architecture](images/Workflow.svg)
+
+---
+
+## Explanation of the Workflow
+
 ### What are Producers and Consumers in Kafka?
 
-* **Producer:** A service that **publishes** events/messages to Kafka.
-* **Consumer:** A service that **subscribes to** (reads) messages from Kafka and acts on them.
+- **Producer**: Publishes events/messages to a Kafka topic.
+- **Consumer**: Subscribes to and processes messages from a Kafka topic.
 
----
-
-## Service Roles:
+### Service Roles
 
 1. **User Service** → *Producer Only*
-
-   * Sends `user.created` when a new user registers.
-   * Doesn’t need to consume anything.
+   - Sends `user.created` events when a new user registers.
+   - Does not consume Kafka messages.
 
 2. **Product Service** → *Producer Only*
-
-   * Sends `product.created` when a product is added.
-   * Doesn’t depend on external Kafka events.
+   - Sends `product.created` events when a product is added.
+   - Does not depend on external Kafka events.
 
 3. **Inventory Service** → *Producer + Consumer*
-
-   * **Consumes** `product.created`, `order.placed` to create stock entries.
-   * **Produces** `stock.updated` after stock changes.
+   - **Consumes**: `product.created` (from Product Service) and `order.placed` (from Order Service) to create/update stock entries.
+   - **Produces**: `stock.updated` after inventory changes.
 
 4. **Order Service** → *Producer + Consumer*
-
-   * **Consumes** `stock.updated` to verify stock before placing orders.
-   * **Produces** `order.placed` after a successful order.
+   - **Consumes**: `stock.updated` to verify stock availability before placing orders.
+   - **Produces**: `order.placed` after a successful order.
 
 ---
 
+## Kafka Setup and Configuration
 
-Add the following code to the root `docker-compose.yml` file to configure AutoMQ settings:  
-```bash
-  # Kafka Service (AutoMQ)
-  automq:
-    image: automq/automq-ce:latest
+### Docker Compose Configuration for Apache Kafka
+
+Add the following to the root `docker-compose.yml` to configure Apache Kafka and ZooKeeper:
+
+```yaml
+kafka:
+    image: bitnami/kafka:3.4
+    container_name: kafka
     ports:
       - "9092:9092"
-      - "8080:8080"
     environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://automq:9092
-      KAFKA_LOG_DIRS: /kafka-logs
-    volumes:
-      - automq_data:/kafka-logs
+      - KAFKA_CFG_BROKER_ID=1
+      - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT
+      - ALLOW_PLAINTEXT_LISTENER=yes
+      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=true
+      - KAFKA_CFG_NUM_PARTITIONS=3
+      - KAFKA_CFG_DEFAULT_REPLICATION_FACTOR=1
+      - KAFKA_AUTO_CREATE_TOPICS_ENABLE=true
+    depends_on:
+      zookeeper:
+        condition: service_healthy
     networks:
       - microservice-network
-
+    volumes:
+      - kafka_data:/bitnami/kafka
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: on-failure
+  zookeeper:
+    image: bitnami/zookeeper:latest
+    ports:
+      - "2181:2181"
+    environment:
+      - ALLOW_ANONYMOUS_LOGIN=yes
+      - ZOO_4LW_COMMANDS_WHITELIST=mntr,srvr,ruok
+    networks:
+      - microservice-network
+    volumes:
+      - zookeeper_data:/bitnami/zookeeper
+    healthcheck:
+      test: ["CMD-SHELL", "echo ruok | nc -w 3 localhost 2181 | grep imok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: on-failure
+networks:
+  microservice-network:
+    driver: bridge
+volumes:
+  mongodb_product_data:
+  mongodb_order_data:
+  postgres_inventory_data:
+  postgres_user_data:
+  kafka_data:
+  zookeeper_data:
 ```
-# Kafka AutoMQ Integration for Product Service
 
-This section explains how Kafka AutoMQ is integrated into the Product Service to enable asynchronous, reliable, and scalable messaging for product and inventory events. Kafka acts as a message broker that helps decouple the services, ensuring better performance and real-time synchronization across distributed components.
+**Explanation**:
+- **ZooKeeper**: Manages Kafka's metadata, such as topic configurations and broker coordination.
+- **Kafka**: Configured with a single broker (ID: 1) listening on `kafka:9092`. The `KAFKA_ADVERTISED_LISTENERS` ensures services connect using the `kafka` hostname within the `microservice-network`.
+- **Volumes**: Persist Kafka and ZooKeeper data.
+- **Networks**: Ensures all services communicate over the `microservice-network`.
 
 ---
 
-We use the **`aiokafka`** Python library for asynchronous Kafka producer implementation and manage Kafka connection lifecycle with FastAPI startup and shutdown events.
+### Kafka Integration for Product Service
 
+The Product Service uses the `aiokafka` Python library for asynchronous Kafka producer operations, with lifecycle management via FastAPI startup and shutdown events.
 
+#### Directory Structure
 ```bash
 product-service/
 ├── app/
 │   ├── api/
 │   │   ├── routes/
-│   │   │   └── products.py    # Handles processing messages from Kafka consumer to update product information
-│   │   └── dependencies.py    # Provides Kafka producer/consumer as FastAPI dependencies for injection
+│   │   │   └── products.py    # Handles product creation and publishes to Kafka
+│   │   └── dependencies.py    # Provides Kafka producer as a FastAPI dependency
 │   ├── core/
-│   │   └── config.py          # Centralized config for Kafka broker and topic settings
+│   │   └── config.py          # Kafka broker and topic settings
 │   ├── db/
-│   │   └── (no changes here)
+│   │   └── (no changes)
 │   ├── models/
-│   │   └── (no changes here)
+│   │   └── (no changes)
 │   ├── services/
-│   │   ├── inventory_service.py      # (no changes here)
-│   │   ├── kafka_producer.py         # Kafka message publisher service
-│   └── main.py                       # Modified to run Kafka consumer 
-├── .env                        # Environment variables related to Kafka such as BOOTSTRAP_SERVERS, TOPIC_NAME
-├── requirements.txt                  # Includes aiokafka and other dependencies for Kafka integration
-├── docker-compose.yml                # May require adding Kafka broker service here if needed
-└── Dockerfile                        # (no changes here)
-
+│   │   ├── inventory_service.py      # (no changes)
+│   │   ├── kafka_producer.py         # Kafka message publisher
+│   └── main.py                       # Registers Kafka lifecycle events
+├── .env                              # Kafka environment variables
+├── requirements.txt                  # Includes aiokafka
+├── docker-compose.yml                # Includes Kafka dependency
+└── Dockerfile                        # (no changes)
 ```
 
-Install Dependencies: 
-```bash
-pip install -r requirements.txt
+### Some base files: 
+
+**requirements.txt**:
+```text
+fastapi
+uvicorn
+pymongo
+aiokafka
 ```
 
----
-
-## 1. Kafka Setup in `.env`
-
-Add the following environment variables to your Product Service `.env` file:
-
-```bash
-KAFKA_BOOTSTRAP_SERVERS=automq:9092
+#### Kafka Setup in `.env`
+Add to `product-service/.env`:
+```env
+KAFKA_BOOTSTRAP_SERVERS=kafka:9092
 KAFKA_TOPIC=product-topic
 ```
 
-* `KAFKA_BOOTSTRAP_SERVERS`: Address of the Kafka broker (automq service)
-* `KAFKA_TOPIC`: Topic name for product events
-
----
-
-## 2. Docker Compose Configuration
-
-`docker-compose.yml` file for Product Service includes: ( only the changes part added)
-
+#### Docker Compose Configuration
+Update `product-service/docker-compose.yml`:
 ```yaml
-
+services:
+  product-service:
+    .....
     depends_on:
       - mongodb
-      - automq        # Kafka broker service dependency
+      - kafka
     networks:
       - product-network
       - microservice-network
@@ -138,478 +178,484 @@ KAFKA_TOPIC=product-topic
       - USER_SERVICE_URL=http://user-service:8003/api/v1
       - INVENTORY_SERVICE_URL=http://inventory-service:8002/api/v1
       - ORDER_SERVICE_URL=http://order-service:8001/api/v1
-      - KAFKA_BOOTSTRAP_SERVERS=automq:9092  # Kafka broker address
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - KAFKA_TOPIC=product-topic
 ```
 
----
-
-### 3. `config.py` - Kafka Settings
-
-Add new Kafka settings to your configuration:
-
+#### Configuration in `config.py`
 ```python
+from pydantic import BaseSettings
+
 class Settings(BaseSettings):
-    KAFKA_BOOTSTRAP_SERVERS: str  # e.g. "automq:9092"
-    KAFKA_TOPIC: str              # e.g. "product-topic"
-
+    KAFKA_BOOTSTRAP_SERVERS: str = "kafka:9092"
+    KAFKA_TOPIC: str = "product-topic"
 ```
 
----
-
-### 4. `dependencies.py` - Kafka Producer Service Setup
-
-Define a singleton Kafka producer service:
-
+#### Dependencies in `dependencies.py`
 ```python
-from your_app.kafka_producer import KafkaProducer
+from app.services.kafka_producer import KafkaProducerService
+from app.core.config import settings
 
-kafka_producer = KafkaProducer(
-    bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS
-)
+kafka_producer = KafkaProducerService(bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS)
 
-async def get_kafka_producer() -> KafkaProducer:
+async def get_kafka_producer() -> KafkaProducerService:
     return kafka_producer
 ```
 
----
-
-### 5. `kafka_producer.py` - Implement an async Kafka producer using `aiokafka`.
----
-
-### 6. `main.py` - Register Kafka Startup/Shutdown Handlers
-
-Register Kafka lifecycle events with FastAPI:
-
-```python
-from your_app.kafka_producer import start_kafka, stop_kafka
-
-app.add_event_handler("startup", connect_to_mongo)
-app.add_event_handler("startup", start_kafka)        # Start Kafka on app startup
-
-app.add_event_handler("shutdown", close_mongo_connection)
-app.add_event_handler("shutdown", stop_kafka)        # Stop Kafka on app shutdown
-```
-
----
 
 
-## 7. Usage: Sending Product Events to Kafka
 
-Whenever a new product is created, the service automatically sends a Kafka event describing the product creation. This allows other microservices or consumers to react asynchronously to product changes.
+### Kafka Integration for Inventory Service
 
-Here, how the product creation endpoint uses the Kafka producer:
+The Inventory Service uses FastAPI for APIs, SQLAlchemy for PostgreSQL, and `aiokafka` for asynchronous Kafka producer and consumer operations.
 
-```python
-
-from app.services.kafka_producer import KafkaProducerService
-import logging
-
-router = APIRouter()
-
-@router.post("/", response_model=ProductResponse, status_code=201)
-async def create_product(
-    product: ProductCreate,
-    db: AsyncIOMotorDatabase = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
-    kafka_producer: KafkaProducerService = Depends(get_kafka_producer)
-):
-    product_dict = product.dict()
-    result = await db["products"].insert_one(product_dict)
-    created_product = await db["products"].find_one({"_id": result.inserted_id})
-
-    logging.info(f"Created product: {result.inserted_id}")
-
-    # Send product_created event to Kafka topic "products"
-    try:
-        await kafka_producer.send(
-            topic="products",
-            message={
-                "event": "product_created",
-                "product_id": str(result.inserted_id),
-                "product_data": product_dict
-            }
-        )
-    except Exception as e:
-        logging.error(f"Kafka publish failed: {e}")
-
-    return created_product
-```
-
-### Explanation:
-
-* After inserting the new product into MongoDB, the service sends a JSON message to the Kafka topic `products`.
-* The message includes the event type, product ID, and the product details.
-* Errors during Kafka publishing are logged but do not block the API response.
-
----
-
-### API Response on Product Creation 
-
-When, create a product (e.g., "Premium Smartphone"), the API responds with the full product data including the generated product ID:
-
-```json
-{
-  "name": "Premium Smartphone",
-  "description": "Latest model with high-end camera and long battery life",
-  "category": "Electronics",
-  "price": 899.99,
-  "quantity": 50,
-  "_id": "product_id_1"
-}
-```
-
----
-
-### Kafka Event Logs
-
-On the backend, after successfully inserting the product in MongoDB, the Kafka producer sends an event to the `products` topic. The logs reflect this lifecycle:
-
-#### On service startup:
-
-```
-INFO: Kafka producer started successfully.
-```
-
-#### On sending a product creation event to Kafka:
-
-```
-INFO: Sent Kafka message to topic 'products': {
-  "event": "product_created",
-  "product_id": "product_id_1",
-  "product_data": {
-    "name": "Premium Smartphone",
-    "description": "Latest model with high-end camera and long battery life",
-    "category": "Electronics",
-    "price": 899.99,
-    "quantity": 50
-  }
-}
-```
-
-* This confirms the event was published to the Kafka topic.
-* The message contains the event type (`product_created`), the product ID, and the product details.
-
-#### On any Kafka publishing failure (Kafka is down):
-
-```
-ERROR: Kafka publish failed for product product_id_1: ConnectionError: ...
-```
-
-
-#### On Service Shutdown
-
-When shutting down the FastAPI service:
-
-```
-INFO: Kafka producer stopped gracefully.
-```
-
----
-
-
-# Now, 
-# Kafka AutoMQ Integration for Inventory Service
-
-The service uses FastAPI for APIs, SQLAlchemy for PostgreSQL, and `aiokafka` for asynchronous Kafka operations, with AutoMQ as the broker.
-
+#### Directory Structure
 ```bash
 inventory-service/
 ├── app/
 │   ├── api/
 │   │   ├── routes/
-│   │   │   └── inventory.py        # Processes messages received from Kafka consumer to update inventory
-│   │   └── dependencies.py         # Injects Kafka producer/consumer as FastAPI dependencies
+│   │   │   └── inventory.py        # Processes Kafka messages to update inventory
+│   │   └── dependencies.py         # Kafka producer/consumer dependencies
 │   ├── core/
-│   │   └── config.py               # Centralized configuration for Kafka broker and topic settings
+│   │   └── config.py               # Kafka settings
 │   ├── db/
-│   │   └── (no changes here)
+│   │   └── (no changes)
 │   ├── models/
-│   │   └── (no changes here)
+│   │   └── (no changes)
 │   ├── services/
-│   │   ├── inventory_kafka_service.py   # Business logic to update inventory based on messages from Kafka
-│   │   ├── kafka_producer.py            # Service to publish messages to Kafka
-│   │   ├── kafka_consumer.py            # Service to consume messages from Kafka
-│   │   └── product.py                   # (no changes here)
-│   └── main.py                    # Modified to run Kafka consumer as a background task during app runtime
-├── .env                      # Environment variables related to Kafka like BOOTSTRAP_SERVERS, TOPIC_NAME
-├── requirements.txt                     # Includes dependencies for Kafka integration like aiokafka
-├── docker-compose.yml                   # Kafka broker service may need to be added here
-└── Dockerfile                           # (no changes here)
+│   │   ├── inventory_kafka_service.py   # Logic for inventory updates from Kafka
+│   │   ├── kafka_producer.py            # Publishes to Kafka
+│   │   ├── kafka_consumer.py            # Consumes from Kafka
+│   │   └── product.py                   # (no changes)
+│   └── main.py                          # Runs Kafka consumer as a background task
+├── .env
+├── requirements.txt
+├── docker-compose.yml
+└── Dockerfile
+```
+### Some base files: 
 
+**requirements.txt**:
+```text
+fastapi
+uvicorn
+sqlalchemy
+psycopg2-binary
+aiokafka
 ```
 
-
-Install Dependencies: 
-```bash
-pip install -r requirements.txt
-```
-
-## 1. Kafka Setup in `.env`
-Add these environment variables to the Inventory Service’s `.env` file:
-
+#### Kafka Setup in `.env`
+Add to `inventory-service/.env`:
 ```env
-KAFKA_BOOTSTRAP_SERVERS=automq:9092
+KAFKA_BOOTSTRAP_SERVERS=kafka:9092
 KAFKA_PRODUCER_TOPIC=stock-updated
 KAFKA_CONSUMER_TOPIC=product-topic
 ```
 
-- **KAFKA_BOOTSTRAP_SERVERS**: Address of the AutoMQ broker.
-- **KAFKA_PRODUCER_TOPIC**: Topic for inventory stock updates (`stock-updated`).
-- **KAFKA_CONSUMER_TOPIC**: Topic for product events from Product Service (`product-topic`).
-
-## 2. Docker Compose Configuration
-Update `docker-compose.yml` for the Inventory Service with these changes:
-
+#### Docker Compose Configuration
+Update `inventory-service/docker-compose.yml`:
 ```yaml
 services:
   inventory-service:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    ports:
-      - "8002:8002"
+    ......
     depends_on:
       - postgres
-      - automq  # Kafka broker dependency
+      - kafka
     networks:
       - inventory-network
       - microservice-network
     environment:
-      - KAFKA_BOOTSTRAP_SERVERS=automq:9092
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - KAFKA_PRODUCER_TOPIC=stock-updated
+      - KAFKA_CONSUMER_TOPIC=product-topic
       - PRODUCT_SERVICE_URL=http://product-service:8000/api/v1
 ```
 
-- Ensures dependency on `automq` service and connects to `microservice-network` for inter-service communication.
-
-## 3. Configuration in `config.py`
-Add Kafka settings to `app/core/config.py`:
-
+#### Configuration in `config.py`
 ```python
 from pydantic import BaseSettings
 
 class Settings(BaseSettings):
-    KAFKA_BOOTSTRAP_SERVERS: str  # e.g., "automq:9092"
-    KAFKA_PRODUCER_TOPIC: str     # e.g., "stock-updated"
-    KAFKA_CONSUMER_TOPIC: str     # e.g., "product-topic"
+    KAFKA_BOOTSTRAP_SERVERS: str = "kafka:9092"
+    KAFKA_PRODUCER_TOPIC: str = "stock-updated"
+    KAFKA_CONSUMER_TOPIC: str = "product-topic"
 ```
 
-## 4. Kafka Producer and Consumer Setup
-### 4.1 `kafka_producer.py` - Kafka Producer Implementation
-Implement an async Kafka producer in `app/service/kafka_producer.py`.
 
-### 4.2 `dependencies.py` - Kafka Producer Dependency
-Define a singleton Kafka producer in `app/api/dependencies.py`:
+## Test the Apache Kafka Integration:
 
-```python
-from app.service.kafka_producer import KafkaProducer
-from app.core.config import settings
-
-kafka_producer = KafkaProducerService(
-    bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
-    topic=settings.KAFKA_PRODUCER_TOPIC
-
-)
-async def get_kafka_producer() -> KafkaProducer:
-    return kafka_producer
+**Command:**
+```bash
+docker-compose up --build -d
+docker ps
+```
+### Check Kafka Broker API Versions
+**Command:**
+```bash
+docker exec -it kafka kafka-broker-api-versions.sh --bootstrap-server kafka:9092
 ```
 
-### 4.3 `kafka_consumer.py` - Kafka Consumer Implementation
-Implement an async Kafka consumer in `app/service/kafka_consumer.py`.
+**Explanation:**
+Queries the API versions supported by the Kafka broker at `kafka:9092`. 
 
-## 5. Main Application Setup in `main.py`
-Register Kafka lifecycle events in `app/main.py`:
-
-```python
-from fastapi import FastAPI
-from app.service.kafka_producer import kafka_producer
-from app.service.kafka_consumer import kafka_consumer
-import asyncio
-import logging
-
-logger = logging.getLogger(__name__)
-app = FastAPI(title="Inventory Service API")
-
-@app.on_event("startup")
-async def on_startup():
-    await kafka_producer.start()  # Start Kafka producer
-    logger.info(" Kafka producer started")
-    asyncio.create_task(kafka_consumer.start())  # Start Kafka consumer in background
-    logger.info("Kafka producer and consumer started")
-
-@app.on_event("shutdown")
-async def on_shutdown():
-    await kafka_producer.stop()  # Stop Kafka producer
-    await kafka_consumer.stop()  # Stop Kafka consumer
-    logger.info("Kafka producer and consumer stopped")
+**Expected Output:**
+```
+kafka:9092 (id: 1 rack: null) -> (
+        Produce(0): 0 to 9 [usable: 9],
+        Fetch(1): 0 to 13 [usable: 13],
+        ListOffsets(2): 0 to 7 [usable: 7],
+        Metadata(3): 0 to 12 [usable: 12],
+        LeaderAndIsr(4): 0 to 7 [usable: 7],
+        StopReplica(5): 0 to 4 [usable: 4],
+        UpdateMetadata(6): 0 to 8 [usable: 8],
+        ControlledShutdown(7): 0 to 3 [usable: 3],……)
 ```
 
-## 6. Usage: Kafka Integration in Inventory Service
+### Verify Kafka-ZooKeeper Connection
+**Command:**
+```bash
+docker-compose logs kafka | grep zookeeper
+```
 
-### 6.1 Producing to `stock-updated`
+**Explanation:**
+Filters Kafka service logs for ZooKeeper-related entries, confirming successful connection to ZooKeeper at `zookeeper:2181`.
 
-The inventory service produces messages to the `stock-updated` topic whenever inventory changes occur (creating, updating, reserving, releasing, or adjusting inventory). These messages are sent via the `InventoryKafkaService.send_stock_update` method, which uses the `KafkaProducer` class to publish messages to AutoMQ.
+**Expected Output:**
+```
+kafka  | [2025-05-31 11:07:09,455] INFO Session establishment complete on server zookeeper/172.23.0.2:2181, session id = 0x100005b4d7c0000, negotiated timeout = 18000 (org.apache.zookeeper.ClientCnxn)
+kafka  | [2025-05-31 11:07:09,459] INFO [ZooKeeperClient Kafka server] Connected. (kafka.zookeeper.ZooKeeperClient)
+```
 
-#### **Scenarios Triggering Producer Messages**
- 
-The following API endpoints in `inventory.py` trigger a stock update message to the `stock-updated` topic:
-- **POST `/api/v1/inventory/`**: Creates a new inventory item.
-- **PUT `/api/v1/inventory/{product_id}`**: Updates an existing inventory item’s available quantity.
-- **POST `/api/v1/inventory/reserve`**: Reserves inventory, reducing available quantity.
-- **POST `/api/v1/inventory/adjust`**: Adjusts inventory (add or remove).
-- **POST `/api/v1/inventory/release`**: Releases reserved inventory, increasing available quantity.
-- **Low Stock Notification**: The `check_and_notify_low_stock` function sends a stock update when an item’s quantity falls below the reorder threshold.
+### List Docker Networks
+**Command:**
+```bash
+docker network ls
+```
 
-#### **Producer Output**
+**Expected Output:**
+```
+NETWORK ID     NAME                                            DRIVER    SCOPE
+e194cecbd5b9   bridge                                          bridge    local
+e9c43590a756   host                                            host      local
+d8bcb8355959   multiservice_ecomerceapp_microservice-network   bridge    local
+488862115c3a   none                                           null      local
+```
 
-- **Scenario**: A new inventory item is created via `POST /api/v1/inventory/` with `product_id="product_id_1"`, `available_quantity=100`.
-  - **Kafka Message**:
-    ```json
-    {
-      "product_id": "product_id_1",
-      "stock": 100
-    }
-    ```
-  - **Log Output** (from `kafka_producer.py`):
-    ```
-    INFO:Kafka producer started
-    INFO:Sent message to topic stock-updated: {'product_id': 'product_id_1', 'stock': 100}
-    ```
-- **Scenario**: Reserve 20 units via `POST /api/v1/inventory/reserve` for `product_id="product_id_1"`, reducing available quantity from 100 to 80.
-  - **Kafka Message**:
-    ```json
-    {
-      "product_id": "product_id_1",
-      "stock": 80
-    }
-    ```
-  - **Log Output**:
-    ```
-    INFO:Sent message to topic stock-updated: {'product_id': 'product_id_1', 'stock': 80}
-    INFO:Reserved 20 units of product product_id_1
-    ```
-- **Scenario**: Low stock detected (e.g., `available_quantity=4`, `reorder_threshold=5`) after an adjustment.
-  - **Kafka Message**:
-    ```json
-    {
-      "product_id": "product_id_1",
-      "stock": 4
-    }
-    ```
-  - **Log Output**:
-    ```
-    INFO:Sent low stock notification for product product_id_1 via Kafka
-    INFO:Sent message to topic stock-updated: {'product_id': 'product_id_1', 'stock': 4}
-    ```
+### Inspect Docker Network
+**Command:**
+```bash
+docker network inspect multiservice_ecomerceapp_microservice-network
+```
 
-### 6.2 Consuming from `product-topic`
-The service consumes product events from `product-topic`. Message from Product Service:
+**Explanation:**
+Provides details about the `microservice-network`, including connected containers (e.g., Kafka, ZooKeeper, services) and their IP addresses in the `172.23.0.0/16` subnet.
 
-```json
+
+
+### Health Checks for Services
+**Commands:**
+```bash
+curl -f http://localhost:8000/health
+curl -f http://localhost:8001/health
+curl -f http://localhost:8002/health
+curl -f http://localhost:8003/health
+``` 
+**Expected Output:**
+```
+{"status":"ok","service":"product-service"}
+{"status":"ok","service":"order-service"}
+{"status":"ok","service":"inventory-service"}
+{"status":"ok","service":"user-service"}
+```
+
+### Logs Checks for Services
+**Commands:**
+```bash
+docker-compose logs product-service
+docker-compose logs inventory-service
+docker-compose logs order-service
+docker-compose logs user-service
+
+``` 
+
+
+### Install `jq` for JSON Parsing
+**Command:**
+```bash
+apt-get update && apt-get install -y jq
+```
+
+**Explanation:**
+Updates the package index and installs `jq`, a command-line JSON processor, used to format API responses in subsequent commands.
+
+
+### Register User (First Attempt)
+**Command:**
+
+```bash
+curl -X POST "http://localhost/api/v1/auth/register" \
+-H "Content-Type: application/json" \
+-d '{
+"email": "admin@example.com",
+"password": "Admin123",
+"first_name": "John",
+"last_name": "song",
+"phone": "555-123-4567"
+}' | jq .
+```
+
+**Explanation:**
+Successfully registers a user with a stronger password. The response includes user details and a unique ID, formatted by `jq`.
+
+**Expected Output:**
+```
+{
+  "email": "admin@example.com",
+  "first_name": "John",
+  "last_name": "song",
+  "phone": "555-123-4567",
+  "id": 1,
+  "is_active": true,
+  "created_at": "2025-05-31T11:22:44.112506+00:00",
+  "addresses": []
+}
+```
+
+### User Login
+**Command:**
+```bash
+curl -X POST "http://localhost/api/v1/auth/login" \
+-H "Content-Type: application/x-www-form-urlencoded" \
+-d "username=admin@example.com&password=Admin123" | jq .
+```
+
+**Expected Output:**
+```
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwiZXhwIjoxNzQ4NjkyNDAzLCJ0eXBlIjoiYWNjZXNzIn0.vju9Nq-pFLZockxLBkF3J3fU_wS8LE0_whDFYwtwlWE",
+  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwiZXhwIjoxNzQ5Mjk1NDAzLCJ0eXBlIjoicmVmcmVzaCJ9.-2WdDezPIMroZZkiVUsE3KfPT2Xl3_qxbxiQox96ZKo",
+  "token_type": "bearer"
+}
+```
+
+### Set Environment Variable for Token
+**Command:**
+```bash
+export TOKEN="access_token replace here"
+```
+
+**Explanation:**
+Sets the `TOKEN` environment variable with the access token from the login response for use in authenticated API calls.
+
+
+### Get Current User Details
+**Command:**
+```bash
+curl -X GET "http://localhost/api/v1/users/me" \
+-H "Authorization: Bearer $TOKEN" | jq .
+```
+
+**Expected Output:**
+```
+{
+  "email": "admin@example.com",
+  "first_name": "John",
+  "last_name": "song",
+  "phone": "555-123-4567",
+  "id": 1,
+  "is_active": true,
+  "created_at": "2025-05-31T11:22:44.112506+00:00",
+  "addresses": []
+}
+```
+
+### Create a Product
+**Command:**
+```bash
+curl -X POST "http://localhost/api/v1/products/" \
+-H "Authorization: Bearer $TOKEN" \
+-H "Content-Type: application/json" \
+-d '{
+"name": "Premium Smartphone",
+"description": "Latest model with high-end camera and long battery life",
+"category": "Electronics",
+"price": 899.99,
+"quantity": 50
+}' | jq .
+```
+
+**Expected Output:**
+```
 {
   "name": "Premium Smartphone",
   "description": "Latest model with high-end camera and long battery life",
   "category": "Electronics",
   "price": 899.99,
   "quantity": 50,
-  "_id": "product_id_1"
+  "_id": "683ae74305f79b34a72b6ce4"
 }
 ```
 
-In `inventory_kafka_service.py`:
-
-```python
-import json
-import logging
-
-logger = logging.getLogger(__name__)
-
-class InventoryKafkaService:
-    @staticmethod
-    async def send_stock_update(product_id: str, stock: int):
-        message = {"product_id": product_id, "stock": stock}
-        await kafka_producer.send(settings.KAFKA_PRODUCER_TOPIC, message)
-
-    @staticmethod
-    async def process_consumed_message(message_bytes: bytes):
-        try:
-            message = json.loads(message_bytes.decode("utf-8"))
-            logger.info(f"Processing consumed message: {message}")
-            # TODO: Add logic to create/update inventory using message["_id"] and message["quantity"]
-        except Exception as e:
-            logger.error(f"Error processing consumed message: {e}")
+### List All Products
+**Command:**
+```bash
+curl -X GET "http://localhost/api/v1/products/" \
+-H "Authorization: Bearer $TOKEN" | jq .
 ```
 
-- **Log Output** (from `kafka_consumer.py` and `inventory_kafka_service.py`):
-    ```
-    INFO:Kafka consumer started for topics: ['product-topic']
-
-    INFO:Consumed message: topic=product-topic key=None value=b'{"name": "Premium Smartphone", 
-    "description": "Latest model with high-end camera and long battery life", "category": "Electronics", 
-    "price": 899.99, "quantity": 50, "_id": "product_id_1"}'
-
-    INFO:Processing consumed message: {'name': 'Premium Smartphone', 'description': 'Latest model with 
-    high-end camera and long battery life', 'category': 'Electronics', 'price': 899.99, 'quantity': 50, 
-    '_id': 'product_id_1'}
-
-    ```
-
-## 7. API Response and Kafka Event Logs
-- **API Response** (e.g., `POST /api/v1/inventory/`):
-  ```json
+**Expected Output:**
+```
   {
-    "id": 1,
-    "product_id": "product_id_1",
-    "available_quantity": 100,
-    "reserved_quantity": 0,
-    "reorder_threshold": 5,
-    "created_at": "2025-05-25T10:42:00+06:00",
-    "updated_at": "2025-05-25T10:42:00+06:00"
+    "name": "Premium Smartphone",
+    "description": "Latest model with high-end camera and long battery life",
+    "category": "Electronics",
+    "price": 899.99,
+    "quantity": 50,
+    "_id": "683ae74305f79b34a72b6ce4"
   }
-  ```
-- **Kafka Producer Logs**:
-  ```
-  INFO:Kafka producer started
-  INFO:Sent message to topic stock-updated: {'product_id': 'product_id_1', 'stock': 100}
-  ```
-- **Kafka Consumer Logs**:
-  ```
-  INFO:Kafka consumer started for topics: ['product-topic']
-  INFO:Processing consumed message: {'name': 'Premium Smartphone', ...}
-  ```
-- **Error Case** (e.g., AutoMQ down):
-  ```
-  ERROR:Failed to send message: ConnectionError: ...
-  ```
 
-#### 8. Testing the Integration
-1. **Start Service**:
-   ```bash
-   docker-compose up --build
-   ```
-2. **Produce Message**:
-   ```bash
-   curl -X POST http://localhost:8002/api/v1/inventory -H "Content-Type: application/json" -d '{"product_id": "product_id_1", "available_quantity": 100, "reserved_quantity": 0, "reorder_threshold": 5}'
-   ```
-   Verify: `kafka-console-consumer --bootstrap-server automq:9092 --topic stock-updated --from-beginning`
-3. **Consume Message**:
-   ```bash
-   kafka-console-producer --broker-list automq:9092 --topic product-topic
-   > {"name": "Premium Smartphone", "description": "Latest model...", "category": "Electronics", "price": 899.99, "quantity": 50, "_id": "product_id_1" 
-   }
-   ```
+```
+## Product Service:
 
+### Verify Product Service Kafka Integration
+**Command:**
+```bash
+docker-compose logs product-service | grep kafka
+```
 
-- **AutoMQ**: Provides scalable, low-latency, S3-based Kafka-compatible messaging.
+**Expected Output:**
+```
+multiservice_ecomerceapp-product-service-1  | INFO:app.services.kafka_producer:Kafka producer started with servers: kafka:9092
+```
+
+### Verify Product Creation Event in Kafka
+**Command:**
+```bash
+docker-compose logs product-service | grep product-topic
+```
+
+**Expected Output:**
+```
+multiservice_ecomerceapp-product-service-1  | INFO:app.api.routes.products:Published product creation event to product-topic: 683ae74305f79b34a72b6ce4
+```
+
+## Inventory Service:
+
+### Create Kafka Topic (`stock-updated`)
+**Command:**
+```bash
+docker exec -it kafka kafka-topics.sh --bootstrap-server kafka:9092 --create --topic stock-updated --partitions 3 --replication-factor 1
+```
+
+**Expected Output:**
+```
+Created topic stock-updated.
+```
+
+### List Kafka Topics
+**Command:**
+```bash
+docker exec -it kafka kafka-topics.sh --bootstrap-server kafka:9092 --list
+```
+
+**Expected Output:**
+```
+__consumer_offsets
+product-topic
+stock-updated
+```
+
+Lists all Kafka topics, confirming the presence of `__consumer_offsets` (internal Kafka topic), `product-topic` (for product events), and `stock-updated` (for inventory updates).
+
+### Describe Kafka Topic (`stock-updated`)
+**Command:**
+```bash
+docker exec -it kafka kafka-topics.sh --bootstrap-server kafka:9092 --describe --topic stock-updated
+```
+
+**Expected Output:**
+```
+Topic: stock-updated    TopicId: HonteEkqQRGIBrfE6N-JDg PartitionCount: 3       ReplicationFactor: 1    Configs: 
+        Topic: stock-updated    Partition: 0    Leader: 1       Replicas: 1     Isr: 1
+        Topic: stock-updated    Partition: 1    Leader: 1       Replicas: 1     Isr: 1
+        Topic: stock-updated    Partition: 2    Leader: 1       Replicas: 1     Isr: 1
+```
+
+### Verify Inventory Service Kafka Integration
+**Command:**
+```bash
+docker-compose logs inventory-service | grep kafka
+```
+
+### Kafka Consumer (Listening to `product-topic`)
+
+The `inventory-service` acts as a **consumer** to listen for product-related events on the Kafka topic `product-topic`. It subscribes to the topic and processes messages related to new products or stock updates.
+
+**Expected Output:**
+
+```plaintext
+Received message from product-topic:
+{
+  'event': 'product_created',
+  'product_id': '683b273557b9aa8bd0812cb3',
+  'product_data': {
+    'name': 'Premium Smartphone',
+    'description': 'Latest model with high-end camera and long battery life',
+    'category': 'Electronics',
+    'price': 899.99,
+    'quantity': 50,
+    '_id': '683b273557b9aa8bd0812cb3'
+  }
+}
+```
+
+> The service correctly listens for the `product_created` event and extracts product information to update its inventory.
 
 ---
 
+### Kafka Producer (Publishing to `stock-updated`)
 
+#### Sample Producer Activity:
 
+```plaintext
+Sent stock update to stock-updated:
+{
+  'product_id': '683b273557b9aa8bd0812cb3',
+  'stock': 50
+}
+```
 
+---
 
+### Start/Stop Logs (Informational)
 
+* Kafka producer started and stopped successfully:
 
+  ```
+  Kafka producer started
+  Kafka producer stopped
+  ```
 
+* Kafka consumer started and left the group cleanly:
 
+  ```
+  Kafka consumer started
+  Kafka consumer stopped
+  ```
 
+---
+
+### Initial Warnings (Handled Automatically)
+
+Initially, the topic `product-topic` was not available during the consumer startup:
+
+```plaintext
+WARNING - Topic product-topic is not available during auto-create initialization
+ERROR - GroupCoordinatorNotAvailableError
+```
+
+These warnings were temporary and automatically resolved once the topic became available and the consumer joined the Kafka group successfully.
+
+---
 
