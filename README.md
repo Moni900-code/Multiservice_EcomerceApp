@@ -389,87 +389,6 @@ apt-get update && apt-get install -y jq
 **Explanation:**
 Updates the package index and installs `jq`, a command-line JSON processor, used to format API responses in subsequent commands.
 
-
-### Register User (First Attempt)
-**Command:**
-
-```bash
-curl -X POST "http://localhost/api/v1/auth/register" \
--H "Content-Type: application/json" \
--d '{
-"email": "admin@example.com",
-"password": "Admin123",
-"first_name": "John",
-"last_name": "song",
-"phone": "555-123-4567"
-}' | jq .
-```
-
-**Explanation:**
-Successfully registers a user with a stronger password. The response includes user details and a unique ID, formatted by `jq`.
-
-**Expected Output:**
-```
-{
-  "email": "admin@example.com",
-  "first_name": "John",
-  "last_name": "song",
-  "phone": "555-123-4567",
-  "id": 1,
-  "is_active": true,
-  "created_at": "2025-05-31T11:22:44.112506+00:00",
-  "addresses": []
-}
-```
-
-### User Login
-**Command:**
-```bash
-curl -X POST "http://localhost/api/v1/auth/login" \
--H "Content-Type: application/x-www-form-urlencoded" \
--d "username=admin@example.com&password=Admin123" | jq .
-```
-
-**Expected Output:**
-```
-{
-  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwiZXhwIjoxNzQ4NjkyNDAzLCJ0eXBlIjoiYWNjZXNzIn0.vju9Nq-pFLZockxLBkF3J3fU_wS8LE0_whDFYwtwlWE",
-  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwiZXhwIjoxNzQ5Mjk1NDAzLCJ0eXBlIjoicmVmcmVzaCJ9.-2WdDezPIMroZZkiVUsE3KfPT2Xl3_qxbxiQox96ZKo",
-  "token_type": "bearer"
-}
-```
-
-### Set Environment Variable for Token
-**Command:**
-```bash
-export TOKEN="access_token replace here"
-```
-
-**Explanation:**
-Sets the `TOKEN` environment variable with the access token from the login response for use in authenticated API calls.
-
-
-### Get Current User Details
-**Command:**
-```bash
-curl -X GET "http://localhost/api/v1/users/me" \
--H "Authorization: Bearer $TOKEN" | jq .
-```
-
-**Expected Output:**
-```
-{
-  "email": "admin@example.com",
-  "first_name": "John",
-  "last_name": "song",
-  "phone": "555-123-4567",
-  "id": 1,
-  "is_active": true,
-  "created_at": "2025-05-31T11:22:44.112506+00:00",
-  "addresses": []
-}
-```
-
 ### Create a Product
 **Command:**
 ```bash
@@ -497,25 +416,6 @@ curl -X POST "http://localhost/api/v1/products/" \
 }
 ```
 
-### List All Products
-**Command:**
-```bash
-curl -X GET "http://localhost/api/v1/products/" \
--H "Authorization: Bearer $TOKEN" | jq .
-```
-
-**Expected Output:**
-```
-  {
-    "name": "Premium Smartphone",
-    "description": "Latest model with high-end camera and long battery life",
-    "category": "Electronics",
-    "price": 899.99,
-    "quantity": 50,
-    "_id": "683ae74305f79b34a72b6ce4"
-  }
-
-```
 ## Product Service:
 
 ### Verify Product Service Kafka Integration
@@ -541,17 +441,6 @@ multiservice_ecomerceapp-product-service-1  | INFO:app.api.routes.products:Publi
 ```
 
 ## Inventory Service:
-
-### Create Kafka Topic (`stock-updated`)
-**Command:**
-```bash
-docker exec -it kafka kafka-topics.sh --bootstrap-server kafka:9092 --create --topic stock-updated --partitions 3 --replication-factor 1
-```
-
-**Expected Output:**
-```
-Created topic stock-updated.
-```
 
 ### List Kafka Topics
 **Command:**
